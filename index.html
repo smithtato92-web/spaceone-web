@@ -184,12 +184,6 @@
                     <input type="email" name="email" id="user-email" required class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="ejemplo@correo.com">
                 </div>
 
-                <div>
-                    <label class="block text-xs font-bold text-gray-400 uppercase mb-2">Contraseña</label>
-                    <input type="password" name="password" id="user-password" required class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Tu contraseña">
-                    <p class="text-[10px] text-gray-400 mt-1">* Requerida para la configuración de la cuenta.</p>
-                </div>
-
                 <button type="button" id="submit-btn" onclick="handleSubmit()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-blue-200 flex justify-center items-center">
                     <span id="btn-text">Enviar solicitud</span>
                 </button>
@@ -248,7 +242,6 @@
             if(!formData.get('nombre')) { showToast("⚠️ Ingresa tu nombre"); return; }
             if(!formData.get('telefono')) { showToast("⚠️ Ingresa tu teléfono"); return; }
             if(!formData.get('email')) { showToast("⚠️ Ingresa un email"); return; }
-            if(!formData.get('password')) { showToast("⚠️ Ingresa tu contraseña"); return; }
 
             btn.disabled = true;
             btnText.innerHTML = '<span class="loader"></span> Enviando...';
