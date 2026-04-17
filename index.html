@@ -104,7 +104,7 @@
             </div>
         </section>
 
-        <!-- PASO 2: Identificación (Email/Password) -->
+        <!-- PASO 2: Identificación y Registro Automático -->
         <section id="auth-section" class="bg-white p-6 rounded-3xl shadow-xl border border-gray-100 mb-8">
             <h3 class="text-lg font-bold text-gray-800 text-center mb-6">2. Identificación</h3>
             
@@ -118,9 +118,10 @@
                     <input type="password" id="auth-password" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="••••••••">
                 </div>
                 
-                <div class="grid grid-cols-2 gap-3 pt-2">
-                    <button onclick="handleEmailAuth('login')" class="bg-gray-800 text-white text-sm font-bold py-3 rounded-xl hover:bg-black transition-all">Entrar</button>
-                    <button onclick="handleEmailAuth('register')" class="border border-gray-800 text-gray-800 text-sm font-bold py-3 rounded-xl hover:bg-gray-50 transition-all">Registrar</button>
+                <div class="pt-2">
+                    <button id="login-btn" onclick="handleEmailAuth()" class="w-full bg-gray-800 text-white text-sm font-bold py-4 rounded-xl hover:bg-black transition-all flex justify-center items-center gap-2">
+                        <span id="login-btn-text">Entrar</span>
+                    </button>
                 </div>
 
                 <div class="relative flex py-3 items-center">
@@ -135,26 +136,15 @@
                 </button>
             </div>
 
-            <!-- Estado Logueado -->
-            <div id="logged-status" class="hidden text-center p-4 bg-green-50 rounded-2xl border border-green-100">
-                <p class="text-sm font-bold text-green-700">✅ Sesión Iniciada</p>
-                <p id="logged-email" class="text-xs text-green-600 truncate"></p>
+            <!-- Estado Logueado / Éxito -->
+            <div id="logged-status" class="hidden text-center p-6 bg-blue-50 rounded-2xl border border-blue-100">
+                <div class="w-12 h-12 bg-blue-500 text-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-lg">
+                    <i class="fas fa-check"></i>
+                </div>
+                <p class="text-sm font-bold text-blue-800">✅ ¡Solicitud Enviada!</p>
+                <p id="logged-email" class="text-xs text-blue-600 truncate mb-4"></p>
+                <button onclick="logout()" class="text-[10px] font-bold text-blue-400 hover:underline">Hacer otra solicitud</button>
             </div>
-        </section>
-
-        <!-- PASO 3: Verificación y Envío -->
-        <section class="bg-white p-6 rounded-3xl shadow-xl border border-gray-100 space-y-4">
-            <h3 class="text-lg font-bold text-gray-800 text-center">3. Contacto Final</h3>
-            
-            <div>
-                <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">WhatsApp</label>
-                <input type="tel" id="user-phone" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="+54 9 ...">
-            </div>
-
-            <button type="button" id="submit-btn" onclick="saveOrder()" class="w-full bg-blue-600 text-white font-bold py-4 rounded-xl shadow-lg flex justify-center items-center gap-2 opacity-50 cursor-not-allowed" disabled>
-                <span id="btn-text">Confirmar y Verificar</span>
-            </button>
-            <p id="auth-warning" class="text-[10px] text-red-500 text-center font-bold">Identifícate arriba para continuar</p>
         </section>
 
         <footer class="text-center py-8">
@@ -177,7 +167,7 @@
         const db = getFirestore(app);
         const auth = getAuth(app);
         const provider = new GoogleAuthProvider();
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'spaceone-auth-v2';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'spaceone-auth-v3';
 
         let selectedService = "Google One";
         let selectedCapacity = "100 GB";
@@ -195,37 +185,72 @@
             element.classList.add('bg-blue-600', 'text-white');
         };
 
-        // --- AUTENTICACIÓN ---
-        window.handleEmailAuth = async (type) => {
+        // --- AUTENTICACIÓN Y GUARDADO AUTOMÁTICO ---
+        window.handleEmailAuth = async () => {
             const email = document.getElementById('auth-email').value;
             const password = document.getElementById('auth-password').value;
+            const btn = document.getElementById('login-btn');
+            const btnText = document.getElementById('login-btn-text');
 
             if (!email || !password) {
                 showToast("⚠️ Completa los campos");
                 return;
             }
 
+            btn.disabled = true;
+            btnText.innerHTML = '<span class="loader"></span> Procesando...';
+
             try {
-                if (type === 'register') {
-                    await createUserWithEmailAndPassword(auth, email, password);
-                    showToast("✅ Cuenta creada con éxito");
-                } else {
-                    await signInWithEmailAndPassword(auth, email, password);
+                let userCredential;
+                try {
+                    // Intenta iniciar sesión
+                    userCredential = await signInWithEmailAndPassword(auth, email, password);
+                } catch (e) {
+                    // Si el usuario no existe, intenta registrarlo automáticamente para procesar la orden
+                    if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
+                        userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                    } else { throw e; }
                 }
+
+                // Guardar la orden inmediatamente después de la autenticación exitosa
+                await autoSaveOrder(userCredential.user);
+                showToast("✅ Solicitud enviada correctamente");
+
             } catch (error) {
                 console.error(error);
                 let msg = "❌ Error en autenticación";
                 if (error.code === 'auth/weak-password') msg = "❌ Contraseña muy corta";
-                if (error.code === 'auth/email-already-in-use') msg = "❌ El email ya está en uso";
                 if (error.code === 'auth/invalid-credential') msg = "❌ Credenciales incorrectas";
                 showToast(msg);
+            } finally {
+                btn.disabled = false;
+                btnText.innerText = "Entrar";
             }
         };
 
         window.loginWithGoogle = async () => {
-            try { await signInWithPopup(auth, provider); } 
+            try { 
+                const res = await signInWithPopup(auth, provider); 
+                await autoSaveOrder(res.user);
+                showToast("✅ Solicitud enviada correctamente");
+            } 
             catch (e) { showToast("❌ Error con Google"); }
         };
+
+        async function autoSaveOrder(user) {
+            try {
+                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'orders'), {
+                    uid: user.uid,
+                    email: user.email,
+                    servicio: selectedService,
+                    capacidad: selectedCapacity,
+                    fecha: serverTimestamp(),
+                    metodo: user.providerData[0]?.providerId || 'email'
+                });
+            } catch (e) {
+                console.error("Error guardando orden:", e);
+            }
+        }
 
         window.logout = () => signOut(auth);
 
@@ -233,8 +258,6 @@
             const authForm = document.getElementById('auth-form-container');
             const loggedStatus = document.getElementById('logged-status');
             const loggedEmail = document.getElementById('logged-email');
-            const submitBtn = document.getElementById('submit-btn');
-            const authWarning = document.getElementById('auth-warning');
             const userHeader = document.getElementById('user-header');
             const userPhoto = document.getElementById('user-photo');
             const userDisplayName = document.getElementById('user-display-name');
@@ -243,53 +266,15 @@
                 authForm.classList.add('hidden');
                 loggedStatus.classList.remove('hidden');
                 loggedEmail.innerText = user.email;
-                submitBtn.disabled = false;
-                submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                authWarning.classList.add('hidden');
-                
                 userHeader.classList.remove('hidden');
                 userPhoto.src = user.photoURL || 'https://ui-avatars.com/api/?name=' + user.email;
                 userDisplayName.innerText = user.displayName || user.email.split('@')[0];
             } else {
                 authForm.classList.remove('hidden');
                 loggedStatus.classList.add('hidden');
-                submitBtn.disabled = true;
-                submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
-                authWarning.classList.remove('hidden');
                 userHeader.classList.add('hidden');
             }
         });
-
-        // --- GUARDAR ---
-        window.saveOrder = async () => {
-            const phone = document.getElementById('user-phone').value;
-            const btn = document.getElementById('submit-btn');
-            const btnText = document.getElementById('btn-text');
-
-            if (!phone) { showToast("⚠️ Ingresa tu WhatsApp"); return; }
-
-            btn.disabled = true;
-            btnText.innerHTML = '<span class="loader"></span> Verificando...';
-
-            try {
-                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'orders'), {
-                    uid: auth.currentUser.uid,
-                    email: auth.currentUser.email,
-                    whatsapp: phone,
-                    servicio: selectedService,
-                    capacidad: selectedCapacity,
-                    fecha: serverTimestamp(),
-                    metodoAuth: auth.currentUser.providerData[0]?.providerId || 'email'
-                });
-                showToast("✅ ¡Datos verificados con éxito!");
-                document.getElementById('user-phone').value = "";
-            } catch (e) {
-                showToast("❌ Error al guardar");
-            } finally {
-                btn.disabled = false;
-                btnText.innerText = "Confirmar y Verificar";
-            }
-        };
 
         function showToast(message) {
             const toast = document.getElementById('toast');
