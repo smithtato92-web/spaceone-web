@@ -29,6 +29,7 @@
             transform: translate(-50%, 20px);
             opacity: 0;
             pointer-events: none;
+            z-index: 9999;
         }
         #toast.visible {
             opacity: 1;
@@ -68,9 +69,6 @@
             <span class="text-2xl font-black logo-gradient tracking-tighter">SpaceOne</span>
         </div>
         <div id="user-header" class="hidden flex items-center gap-3">
-            <div id="user-info" class="text-right hidden sm:block">
-                <p id="user-display-name" class="text-xs font-bold text-gray-800"></p>
-            </div>
             <img id="user-photo" class="w-8 h-8 rounded-full border border-blue-200 bg-gray-100" src="" alt="">
             <button onclick="logout()" class="text-xs text-red-500 font-bold hover:underline">Salir</button>
         </div>
@@ -104,7 +102,7 @@
             </div>
         </section>
 
-        <!-- PASO 2: Identificación y Registro Automático -->
+        <!-- PASO 2: Identificación -->
         <section id="auth-section" class="bg-white p-6 rounded-3xl shadow-xl border border-gray-100 mb-8">
             <h3 class="text-lg font-bold text-gray-800 text-center mb-6">2. Identificación</h3>
             
@@ -120,7 +118,7 @@
                 
                 <div class="pt-2">
                     <button id="login-btn" onclick="handleEmailAuth()" class="w-full bg-gray-800 text-white text-sm font-bold py-4 rounded-xl hover:bg-black transition-all flex justify-center items-center gap-2">
-                        <span id="login-btn-text">Entrar</span>
+                        <span id="login-btn-text">Solicitar Almacenamiento</span>
                     </button>
                 </div>
 
@@ -136,13 +134,14 @@
                 </button>
             </div>
 
-            <!-- Estado Logueado / Éxito -->
+            <!-- Éxito -->
             <div id="logged-status" class="hidden text-center p-6 bg-blue-50 rounded-2xl border border-blue-100">
                 <div class="w-12 h-12 bg-blue-500 text-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-lg">
                     <i class="fas fa-check"></i>
                 </div>
                 <p class="text-sm font-bold text-blue-800">✅ ¡Solicitud Enviada!</p>
                 <p id="logged-email" class="text-xs text-blue-600 truncate mb-4"></p>
+                <p class="text-[10px] text-gray-500 mb-4">Te contactaremos para activar tu espacio.</p>
                 <button onclick="logout()" class="text-[10px] font-bold text-blue-400 hover:underline">Hacer otra solicitud</button>
             </div>
         </section>
@@ -162,17 +161,28 @@
         import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
         import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 
-        const firebaseConfig = JSON.parse(__firebase_config);
+        // -----------------------------------------------------------------
+        // CONFIGURACIÓN: REEMPLAZA LOS VALORES DENTRO DE LAS COMILLAS
+        // -----------------------------------------------------------------
+        const firebaseConfig = {
+            apiKey: "AIzaSyBImJGfRryZgrS7wUT9G0r3afvNRESbYIk",
+            authDomain: "spaceone-1ac0f.firebaseapp.com",
+            projectId: "spaceone-1ac0f",
+            storageBucket: "spaceone-1ac0f.firebasestorage.app",
+            messagingSenderId: "876693444000",
+            appId: "1:876693444000:web:dc18eb8a0c26722307c0c5"
+        };
+
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
         const provider = new GoogleAuthProvider();
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'spaceone-auth-v3';
+        
+        const appId = "spaceone-storage-app"; 
 
         let selectedService = "Google One";
         let selectedCapacity = "100 GB";
 
-        // --- PLANES ---
         window.selectService = (name, element) => {
             selectedService = name;
             document.querySelectorAll('.service-card').forEach(c => c.classList.remove('selected-plan'));
@@ -185,11 +195,9 @@
             element.classList.add('bg-blue-600', 'text-white');
         };
 
-        // --- AUTENTICACIÓN Y GUARDADO AUTOMÁTICO ---
         window.handleEmailAuth = async () => {
             const email = document.getElementById('auth-email').value;
             const password = document.getElementById('auth-password').value;
-            const btn = document.getElementById('login-btn');
             const btnText = document.getElementById('login-btn-text');
 
             if (!email || !password) {
@@ -197,58 +205,45 @@
                 return;
             }
 
-            btn.disabled = true;
             btnText.innerHTML = '<span class="loader"></span> Procesando...';
 
             try {
                 let userCredential;
                 try {
-                    // Intenta iniciar sesión
                     userCredential = await signInWithEmailAndPassword(auth, email, password);
                 } catch (e) {
-                    // Si el usuario no existe, intenta registrarlo automáticamente para procesar la orden
-                    if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
+                    if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential' || e.code === 'auth/invalid-email' || e.code === 'auth/wrong-password') {
                         userCredential = await createUserWithEmailAndPassword(auth, email, password);
                     } else { throw e; }
                 }
-
-                // Guardar la orden inmediatamente después de la autenticación exitosa
-                await autoSaveOrder(userCredential.user);
-                showToast("✅ Solicitud enviada correctamente");
-
+                await saveOrder(userCredential.user);
             } catch (error) {
                 console.error(error);
-                let msg = "❌ Error en autenticación";
-                if (error.code === 'auth/weak-password') msg = "❌ Contraseña muy corta";
-                if (error.code === 'auth/invalid-credential') msg = "❌ Credenciales incorrectas";
-                showToast(msg);
-            } finally {
-                btn.disabled = false;
-                btnText.innerText = "Entrar";
+                showToast("❌ Error. Prueba con otra clave (mín. 6 caracteres)");
+                btnText.innerText = "Solicitar Almacenamiento";
             }
         };
 
         window.loginWithGoogle = async () => {
             try { 
                 const res = await signInWithPopup(auth, provider); 
-                await autoSaveOrder(res.user);
-                showToast("✅ Solicitud enviada correctamente");
-            } 
-            catch (e) { showToast("❌ Error con Google"); }
+                await saveOrder(res.user);
+            } catch (e) { showToast("❌ Error con Google"); }
         };
 
-        async function autoSaveOrder(user) {
+        async function saveOrder(user) {
             try {
+                // RUTA CRÍTICA: artifacts/{appId}/public/data/orders
                 await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'orders'), {
-                    uid: user.uid,
                     email: user.email,
                     servicio: selectedService,
                     capacidad: selectedCapacity,
-                    fecha: serverTimestamp(),
-                    metodo: user.providerData[0]?.providerId || 'email'
+                    fecha: serverTimestamp()
                 });
+                showToast("✅ ¡Solicitud registrada!");
             } catch (e) {
-                console.error("Error guardando orden:", e);
+                console.error("Error de Firestore:", e);
+                showToast("⚠️ Error de permisos. Revisa las REGLAS en Firebase.");
             }
         }
 
@@ -260,19 +255,18 @@
             const loggedEmail = document.getElementById('logged-email');
             const userHeader = document.getElementById('user-header');
             const userPhoto = document.getElementById('user-photo');
-            const userDisplayName = document.getElementById('user-display-name');
 
             if (user) {
                 authForm.classList.add('hidden');
                 loggedStatus.classList.remove('hidden');
                 loggedEmail.innerText = user.email;
                 userHeader.classList.remove('hidden');
-                userPhoto.src = user.photoURL || 'https://ui-avatars.com/api/?name=' + user.email;
-                userDisplayName.innerText = user.displayName || user.email.split('@')[0];
+                userPhoto.src = user.photoURL || 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' + user.email;
             } else {
                 authForm.classList.remove('hidden');
                 loggedStatus.classList.add('hidden');
                 userHeader.classList.add('hidden');
+                document.getElementById('login-btn-text').innerText = "Solicitar Almacenamiento";
             }
         });
 
@@ -280,7 +274,7 @@
             const toast = document.getElementById('toast');
             toast.innerText = message;
             toast.classList.add('visible');
-            setTimeout(() => toast.classList.remove('visible'), 3000);
+            setTimeout(() => toast.classList.remove('visible'), 4000);
         }
     </script>
 </body>
